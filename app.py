@@ -89,33 +89,33 @@ class Assignment(db.Model):
 
 
 def is_course_teacher(course_id: int, teacher_id: int) -> bool:
-    """
-    Check if the given teacher is the owner of the course.
-
-    Args:
-        course_id (int): The ID of the course to check
-        teacher_id (int): The ID of the teacher
-
-    Returns:
-        bool: True if the teacher owns the course, False otherwise
-    """
     course = Course.query.filter_by(
         id=course_id, teacher_id=teacher_id).first()
     return course is not None
 
-# New routes for enhanced functionality
-
 
 @app.route('/', methods=['GET'])
 def first():
-
     return jsonify({'message': 'Backend flask app running'}), 200
 
 
 @app.route('/api', methods=['GET'])
 def api_route():
-
     return jsonify({'message': '/API endpoint called !'}), 200
+
+
+# Vulnerability: XSS - for assignment i added for ZAP detection
+@app.route('/search', methods=['GET'])
+def search():
+    query = request.args.get('q', '')
+    return f'''
+    <html>
+        <body>
+            <h1>Search Results</h1>
+            <p>You searched for: {query}</p>
+        </body>
+    </html>
+    '''
 
 
 @app.route('/api/grade-submission', methods=['POST'])
@@ -157,7 +157,6 @@ def get_student_submissions(student_id):
 
 @app.route('/api/courses/<int:course_id>/assignments', methods=['GET'])
 def get_course_assignments(course_id):
-    # Vulnerability: No authentication check
     assignments = Assignment.query.filter_by(course_id=course_id).all()
 
     return jsonify([{
@@ -167,31 +166,24 @@ def get_course_assignments(course_id):
         'due_date': a.due_date.isoformat()
     } for a in assignments])
 
-# Vulnerability: No input validation or sanitization
-# Modified registration endpoint with role-based signup
-
 
 @app.route('/api/register', methods=['POST'])
 def register():
     data = request.get_json()
 
-    # Vulnerability: No input validation
     if User.query.filter_by(username=data['username']).first():
         return jsonify({'message': 'Username already exists'}), 400
 
-    # Vulnerability: Password stored in plaintext
     new_user = User(
         username=data['username'],
         password=data['password'],
-        role=data['role']  # Vulnerability: Role can be manipulated
+        role=data['role']
     )
 
     db.session.add(new_user)
     db.session.commit()
 
     return jsonify({'message': 'Registration successful'})
-
-# New endpoint for course creation (teachers only)
 
 
 @app.route('/api/courses', methods=['POST'])
@@ -210,7 +202,7 @@ def create_course():
         new_course = Course(
             title=data['title'],
             description=data['description'],
-            teacher_id=user.id  # Explicitly set the teacher_id
+            teacher_id=user.id
         )
 
         db.session.add(new_course)
@@ -236,7 +228,6 @@ def enroll_in_course():
     token = request.headers.get('Authorization', '').split('Bearer ')[-1]
 
     try:
-        # Vulnerability: No token expiration check
         payload = jwt.decode(
             token, app.config['SECRET_KEY'], algorithms=['HS256'])
         user = User.query.get(payload['user_id'])
@@ -244,7 +235,6 @@ def enroll_in_course():
         if not user or user.role != 'student':
             return jsonify({'message': 'Unauthorized'}), 403
 
-        # Vulnerability: No duplicate enrollment check
         enrollment = Enrollment(
             student_id=user.id,
             course_id=data['course_id']
@@ -257,8 +247,6 @@ def enroll_in_course():
 
     except jwt.InvalidTokenError:
         return jsonify({'message': 'Invalid token'}), 401
-
-# Modified get_courses endpoint to include enrollment status for students
 
 
 @app.route('/api/courses', methods=['GET'])
@@ -274,22 +262,19 @@ def get_courses():
             return jsonify({'message': 'User not found'}), 404
 
         if user.role == 'teacher':
-            # Teachers only see their own courses
             courses = Course.query.filter_by(teacher_id=user.id).all()
             return jsonify([{
                 'id': c.id,
                 'title': c.title,
                 'description': c.description,
                 'teacher_id': c.teacher_id,
-                'teacher_name': user.username  # Include teacher's own name
+                'teacher_name': user.username
             } for c in courses])
         else:
-            # Students see all courses
             courses = Course.query.all()
             enrollments = Enrollment.query.filter_by(student_id=user.id).all()
             enrolled_course_ids = [e.course_id for e in enrollments]
 
-            # Get all teachers at once to avoid N+1 query problem
             teachers = {u.id: u.username for u in User.query.filter_by(
                 role='teacher').all()}
 
@@ -313,10 +298,8 @@ def login():
     # Vulnerability: Direct string concatenation in SQL query
     query = f"SELECT * FROM user WHERE username='{data['username']}' AND password='{data['password']}'"
 
-    # Using SQLAlchemy instead of direct SQLite
     user = User.query.filter_by(
         username=data['username'],
-        # Vulnerability: plain text password comparison
         password=data['password']
     ).first()
 
@@ -330,12 +313,10 @@ def login():
         return jsonify({'token': token})
 
     return jsonify({'message': 'Invalid credentials'}), 401
-# Vulnerability: No proper authentication check
 
 
 @app.route('/api/submissions/<int:submission_id>', methods=['GET'])
 def get_submission(submission_id):
-    # Vulnerability: No authorization check
     submission = Submission.query.get(submission_id)
     if not submission:
         return jsonify({'message': 'Submission not found'}), 404
@@ -347,8 +328,6 @@ def get_submission(submission_id):
         'feedback': submission.feedback
     })
 
-# Vulnerability: Insecure file handling
-
 
 @app.route('/api/submit-assignment', methods=['POST'])
 def submit_assignment():
@@ -359,9 +338,7 @@ def submit_assignment():
     assignment_id = request.form.get('assignment_id')
     student_id = request.form.get('student_id')
 
-    # Vulnerability: No file type validation
     filename = secure_filename(file.filename)
-    # Vulnerability: Path traversal possible
     file.save(os.path.join(app.config['UPLOAD_FOLDER'], filename))
 
     submission = Submission(
@@ -374,17 +351,12 @@ def submit_assignment():
 
     return jsonify({'message': 'Assignment submitted successfully'})
 
-# Vulnerability: Directory traversal possible
-
 
 @app.route('/api/download/<path:filename>', methods=['GET'])
 def download_file(filename):
-    # Vulnerability: No authorization check
-    # Vulnerability: No path validation
     return send_file(os.path.join(app.config['UPLOAD_FOLDER'], filename))
 
 
-# Vulnerability: Command injection possible
 with app.app_context():
     db.create_all()
 
@@ -412,19 +384,15 @@ def get_course_students(course_id):
         if not user or user.role != 'teacher':
             return jsonify({'message': 'Unauthorized'}), 403
 
-        # Check if teacher owns this course
         if not is_course_teacher(course_id, user.id):
             return jsonify({'message': 'You are not authorized to view students in this course'}), 403
 
-        # Get enrollments for this course
         enrollments = Enrollment.query.filter_by(course_id=course_id).all()
         student_ids = [e.student_id for e in enrollments]
 
-        # Get students and their grades for this specific course
         students_data = []
         for student_id in student_ids:
             student = User.query.get(student_id)
-            # Only get grades for this specific course
             grades = Grade.query.join(Submission).filter(
                 Submission.student_id == student_id,
                 Submission.course_id == course_id
@@ -457,13 +425,11 @@ def get_student_course_grades(course_id, student_id):
             token, app.config['SECRET_KEY'], algorithms=['HS256'])
         user = User.query.filter_by(id=payload['user_id']).first()
 
-        # Check authorization
         if user.role == 'teacher' and not is_course_teacher(course_id, user.id):
             return jsonify({'message': 'Unauthorized'}), 403
         elif user.role == 'student' and user.id != student_id:
             return jsonify({'message': 'Unauthorized'}), 403
 
-        # Get grades for the specific course and student
         grades = Grade.query.join(Submission).filter(
             Submission.student_id == student_id,
             Grade.course_id == course_id
@@ -479,8 +445,6 @@ def get_student_course_grades(course_id, student_id):
     except jwt.InvalidTokenError:
         return jsonify({'message': 'Invalid token'}), 401
 
-# Update the grade submission endpoint
-
 
 @app.route('/api/grade/student', methods=['POST'])
 def grade_student():
@@ -495,11 +459,9 @@ def grade_student():
         if not user or user.role != 'teacher':
             return jsonify({'message': 'Unauthorized'}), 403
 
-        # Check if teacher owns this course
         if not is_course_teacher(data['course_id'], user.id):
             return jsonify({'message': 'Unauthorized to grade in this course'}), 403
 
-        # First check if student is enrolled in this course
         enrollment = Enrollment.query.filter_by(
             student_id=data['student_id'],
             course_id=data['course_id']
@@ -508,16 +470,14 @@ def grade_student():
         if not enrollment:
             return jsonify({'message': 'Student is not enrolled in this course'}), 400
 
-        # Create submission for this specific course
         submission = Submission(
             student_id=data['student_id'],
             course_id=data['course_id'],
             grade=data['grade']
         )
         db.session.add(submission)
-        db.session.flush()  # Get submission ID
+        db.session.flush()
 
-        # Create grade record
         grade = Grade(
             submission_id=submission.id,
             course_id=data['course_id'],
@@ -542,19 +502,17 @@ if __name__ == '__main__':
     with app.app_context():
         db.create_all()
 
-        # Create default teacher only if they don't exist
         default_teacher = User.query.filter_by(username='john.smith').first()
         if not default_teacher:
             default_teacher = User(
                 username='john.smith',
-                password='teacher123',  # In production, this should be hashed
+                password='teacher123',
                 role='teacher'
             )
             db.session.add(default_teacher)
             db.session.commit()
             print("Default teacher created - username: john.smith, password: teacher123")
 
-            # Only create sample courses if the teacher was just created
             sample_courses = [
                 Course(
                     title='Web Security Basics',
