@@ -43,12 +43,10 @@ class Grade(db.Model):
     submission_id = db.Column(db.Integer, db.ForeignKey(
         'submission.id'), nullable=False)
     course_id = db.Column(db.Integer, db.ForeignKey(
-        'course.id'), nullable=False)  # Add this
+        'course.id'), nullable=False)
     value = db.Column(db.Integer, nullable=False)
     feedback = db.Column(db.Text)
     graded_at = db.Column(db.DateTime, default=datetime.utcnow)
-
-# Update submission model to ensure course relationship
 
 
 class Submission(db.Model):
@@ -68,7 +66,7 @@ class User(db.Model):
     username = db.Column(db.String(80), unique=True, nullable=False)
     # Vulnerability: Passwords stored in plaintext
     password = db.Column(db.String(120), nullable=False)
-    role = db.Column(db.String(20), nullable=False)  # 'student' or 'teacher'
+    role = db.Column(db.String(20), nullable=False)
 
 
 class Course(db.Model):
@@ -104,14 +102,14 @@ def api_route():
     return jsonify({'message': '/API endpoint called !'}), 200
 
 
-# Vulnerability: XSS - for assignment i added for ZAP detection
+# Vulnerability: XSS - intentionally added for ZAP detection
 @app.route('/search', methods=['GET'])
 def search():
     query = request.args.get('q', '')
     return f'''
     <html>
         <body>
-            <h1>Search Results</h1>
+            <h1>Hi from Ashwin</h1>
             <p>You searched for: {query}</p>
         </body>
     </html>
@@ -121,8 +119,6 @@ def search():
 @app.route('/api/grade-submission', methods=['POST'])
 def grade_submission():
     data = request.get_json()
-
-    # Vulnerability: No authentication or authorization check
     submission = Submission.query.get(data['submissionId'])
 
     if submission:
@@ -133,7 +129,6 @@ def grade_submission():
         )
         db.session.add(grade)
         db.session.commit()
-
         return jsonify({'message': 'Grade submitted successfully'})
 
     return jsonify({'message': 'Submission not found'}), 404
@@ -141,7 +136,6 @@ def grade_submission():
 
 @app.route('/api/student-submissions/<int:student_id>', methods=['GET'])
 def get_student_submissions(student_id):
-    # Vulnerability: IDOR possible - no authentication check
     submissions = Submission.query.filter_by(student_id=student_id).all()
 
     return jsonify([{
