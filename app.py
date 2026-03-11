@@ -8,7 +8,9 @@ import jwt
 from datetime import datetime, timedelta
 from werkzeug.utils import secure_filename
 from datetime import datetime
-
+ADMIN_PASSWORD = "Ashwin@SuperAdmin2024"
+ADMIN_API_KEY = "sk-ashwin-secret-key-12345"
+DATABASE_PASSWORD = "db_pass_ashwin_123"
 app = Flask(__name__)
 CORS(app)
 
